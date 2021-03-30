@@ -799,7 +799,7 @@ Use 'grabserial -h' for usage help."""
                     delta = elapsed-prev1
                     msg = "[%s %2.6f] " % (linetimestr, delta)
                 else:
-                    msg = "[%s] " % (linetimestr)
+                    msg = "%s " % (linetimestr)
                 if not quiet:
                     outputfd.write(msg)
                 if out:
