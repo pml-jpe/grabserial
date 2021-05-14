@@ -151,9 +151,7 @@ Options:
                            default, program only rotates logs on line breaks.
     -T, --systime          Print system time for each line received. The time
                            is the absolute local time when the first character
-                           of each line is received by grabserial. Timestamp
-                           will be wrapped in square brackets unless "-n" option
-                           is also specified".
+                           of each line is received by grabserial.
     -F, --timeformat=<val> Specifies system time format for each received line
                            e.g. -F \"%Y-%m-%d %H:%M:%S.%f\"
                            (default \"%H:%M:%S.%f\")
@@ -194,7 +192,8 @@ Options:
                            characters.  Also output the data as hexadecimal
                            codes to the output file.
     --csv-friendly         Replace trailing space after timestamp with a comma (",")
-                           to make lines more friendly with CSV data.
+                           to make timestamp more friendly to CSV data.
+    --naked-timestamp      Print timestamp without surrounding square brackets.
                            
 Ex: grabserial -e 30 -t -m "^Linux version.*"
 This will grab serial input for 30 seconds, displaying the time for
@@ -381,6 +380,7 @@ def grab(arglist, outputfd=sys.stdout):
                 "split-lines",
                 "hex-output",
                 "csv-friendly",
+                "naked-timestamp",
             ])
     except getopt.GetoptError as err:
         # print help info and exit
@@ -582,6 +582,8 @@ Use 'grabserial -h' for usage help."""
             hex_output = True
         if opt in ["--csv-friendly"]:
             csv_friendly = True
+        if opt in ["--naked-timestamp"]:
+            naked_timestamp = True
 
     if args:
         eprint("Error: unrecognized argument '%s'" % args[0])
@@ -807,7 +809,9 @@ Use 'grabserial -h' for usage help."""
                     delta = elapsed-prev1
                     msg = "[%s %2.6f] " % (linetimestr, delta)
                 else:
-                    msg = "%s " % (linetimestr)
+                    msg = "[%s] " % (linetimestr)
+                if naked_timestamp:
+                    for char in "[]": msg = msg.replace(char, "")
                 if csv_friendly:
                     msg = msg[:-1] + ","
                 if not quiet:
