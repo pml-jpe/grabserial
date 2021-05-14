@@ -580,7 +580,7 @@ Use 'grabserial -h' for usage help."""
             cr_to_nl = 1
         if opt in ["--hex-output"]:
             hex_output = True
-        if opt in ["--csv0friendly"]:
+        if opt in ["--csv-friendly"]:
             csv_friendly = True
 
     if args:
