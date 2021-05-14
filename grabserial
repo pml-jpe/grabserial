@@ -429,6 +429,7 @@ def grab(arglist, outputfd=sys.stdout):
     out_filenamehasdate = 0
     hex_output = False
     csv_friendly = False
+    naked_timestamp = False
     max_bytes_per_line = 16
 
     for opt, arg in opts:
