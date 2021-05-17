@@ -169,6 +169,8 @@ Options:
                            "%" it is replaced with %Y-%m_%dT%H-%M-%S.
                            (or with %Y-%m-%d_%H:%M:%S for Linux), otherwise
                            standard strftime() format strings can be used.
+    --make-dirs            Automatically create directory tree specified in
+                           --output.
     -A, --append           Append (rather than overwrite) output data to the
                            file specifed with -o option
     -Q, --quiet            Silent on stdout, serial port data is only written
@@ -194,6 +196,7 @@ Options:
     --csv-friendly         Replace trailing space after timestamp with a comma (",")
                            to make timestamp more friendly to CSV data.
     --naked-timestamp      Print timestamp without surrounding square brackets.
+
                            
 Ex: grabserial -e 30 -t -m "^Linux version.*"
 This will grab serial input for 30 seconds, displaying the time for
@@ -381,6 +384,7 @@ def grab(arglist, outputfd=sys.stdout):
                 "hex-output",
                 "csv-friendly",
                 "naked-timestamp",
+                "make-dirs",
             ])
     except getopt.GetoptError as err:
         # print help info and exit
@@ -430,6 +434,7 @@ def grab(arglist, outputfd=sys.stdout):
     hex_output = False
     csv_friendly = False
     naked_timestamp = False
+    make_dirs = False
     max_bytes_per_line = 16
 
     for opt, arg in opts:
@@ -585,6 +590,8 @@ Use 'grabserial -h' for usage help."""
             csv_friendly = True
         if opt in ["--naked-timestamp"]:
             naked_timestamp = True
+        if opt in ["--make-dirs"]:
+            make_dirs = True
 
     if args:
         eprint("Error: unrecognized argument '%s'" % args[0])
@@ -642,6 +649,8 @@ Use 'grabserial -h' for usage help."""
         try:
             # open in binary mode, to pass through data as unmodified
             # as possible
+            if make_dirs:
+                os.makedirs(os.path.split(out_filename)[0])
             out = open(out_filename, out_permissions)
             if out_filenamehasdate:
                 out_opendate = datetime.date.today()
@@ -736,6 +745,8 @@ Use 'grabserial -h' for usage help."""
                 out_filename = datetime.datetime.now().strftime(out_pattern)
                 vprint("Opening new output file: '%s'" % out_filename)
                 try:
+                    if make_dirs:
+                        os.makedirs(os.path.split(out_filename)[0])
                     out = open(out_filename, out_permissions)
                     out_opendate = datetime.date.today()
                 except IOError:
@@ -776,6 +787,8 @@ Use 'grabserial -h' for usage help."""
                 out_filename = datetime.datetime.now().strftime(out_pattern)
                 vprint("Opening new output file: '%s'" % out_filename)
                 try:
+                    if make_dirs:
+                        os.makedirs(os.path.split(out_filename)[0])
                     out = open(out_filename, out_permissions)
                     out_opendate = datetime.date.today()
                 except IOError:
@@ -812,7 +825,8 @@ Use 'grabserial -h' for usage help."""
                 else:
                     msg = "[%s] " % (linetimestr)
                 if naked_timestamp:
-                    for char in "[]": msg = msg.replace(char, "")
+                    for char in "[]":
+                        msg = msg.replace(char, "")
                 if csv_friendly:
                     msg = msg[:-1] + ","
                 if not quiet:
@@ -951,6 +965,8 @@ Use 'grabserial -h' for usage help."""
                         datetime.datetime.now().strftime(out_pattern)
                     vprint("Opening new output file: '%s'" % out_filename)
                     try:
+                        if make_dirs:
+                            os.makedirs(os.path.split(out_filename)[0])
                         out = open(out_filename, out_permissions)
                         out_opendate = datetime.date.today()
                     except IOError:
@@ -996,7 +1012,7 @@ Use 'grabserial -h' for usage help."""
         msg = "\n\n"
         for pat in inlinetime:
             msg += 'The inlinepat: "%s" was matched at %4.6f\n' % \
-                    (pat, inlinetime[pat])
+                (pat, inlinetime[pat])
         if not quiet:
             outputfd.write(msg)
             outputfd.flush()
