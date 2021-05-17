@@ -649,7 +649,7 @@ Use 'grabserial -h' for usage help."""
         try:
             # open in binary mode, to pass through data as unmodified
             # as possible
-            if make_dirs:
+            if make_dirs and not os.path.exists(os.path.split(out_filename)[0]):
                 os.makedirs(os.path.split(out_filename)[0])
             out = open(out_filename, out_permissions)
             if out_filenamehasdate:
@@ -745,7 +745,7 @@ Use 'grabserial -h' for usage help."""
                 out_filename = datetime.datetime.now().strftime(out_pattern)
                 vprint("Opening new output file: '%s'" % out_filename)
                 try:
-                    if make_dirs:
+                    if make_dirs and not os.path.exists(os.path.split(out_filename)[0]):
                         os.makedirs(os.path.split(out_filename)[0])
                     out = open(out_filename, out_permissions)
                     out_opendate = datetime.date.today()
@@ -787,7 +787,7 @@ Use 'grabserial -h' for usage help."""
                 out_filename = datetime.datetime.now().strftime(out_pattern)
                 vprint("Opening new output file: '%s'" % out_filename)
                 try:
-                    if make_dirs:
+                    if make_dirs and not os.path.exists(os.path.split(out_filename)[0]):
                         os.makedirs(os.path.split(out_filename)[0])
                     out = open(out_filename, out_permissions)
                     out_opendate = datetime.date.today()
@@ -965,7 +965,7 @@ Use 'grabserial -h' for usage help."""
                         datetime.datetime.now().strftime(out_pattern)
                     vprint("Opening new output file: '%s'" % out_filename)
                     try:
-                        if make_dirs:
+                        if make_dirs and not os.path.exists(os.path.split(out_filename)[0]):
                             os.makedirs(os.path.split(out_filename)[0])
                         out = open(out_filename, out_permissions)
                         out_opendate = datetime.date.today()
