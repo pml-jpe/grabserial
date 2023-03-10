@@ -438,6 +438,7 @@ def grab(arglist, outputfd=sys.stdout):
     use_delta = True
     out_filenamehasdate = 0
     hex_output = False
+    etx_newline = False
     csv_friendly = False
     naked_timestamp = False
     make_dirs = False
