@@ -444,7 +444,6 @@ def grab(arglist, outputfd=sys.stdout):
     etx_newline = False
     csv_friendly = False
     naked_timestamp = False
-    make_dirs = False
     max_bytes_per_line = 16
 
     for opt, arg in opts:
@@ -604,8 +603,6 @@ Use 'grabserial -h' for usage help."""
             csv_friendly = True
         if opt in ["--naked-timestamp"]:
             naked_timestamp = True
-        if opt in ["--make-dirs"]:
-            make_dirs = True
 
     if args:
         eprint("Error: unrecognized argument '%s'" % args[0])
@@ -663,7 +660,7 @@ Use 'grabserial -h' for usage help."""
         try:
             # open in binary mode, to pass through data as unmodified
             # as possible
-            if make_dirs and not os.path.exists(out_dirname):
+            if not os.path.exists(out_dirname):
                 os.makedirs(out_dirname)
             out = open(out_filepath, out_permissions)
             if out_filenamehasdate:
@@ -761,7 +758,7 @@ Use 'grabserial -h' for usage help."""
                 out_filepath = os.path.join(out_dirname, out_filename)
                 vprint("Opening new output file: '%s'" % out_filepath)
                 try:
-                    if make_dirs and not os.path.exists(out_dirname):
+                    if not os.path.exists(out_dirname):
                         os.makedirs(out_dirname)
                     out = open(out_filepath, out_permissions)
                     out_opendate = datetime.date.today()
@@ -808,7 +805,7 @@ Use 'grabserial -h' for usage help."""
                 out_filepath = os.path.join(out_dirname, out_filename)
                 vprint("Opening new output file: '%s'" % out_filepath)
                 try:
-                    if make_dirs and not os.path.exists(out_dirname):
+                    if not os.path.exists(out_dirname):
                         os.makedirs(out_dirname)
                     out = open(out_filepath, out_permissions)
                     out_opendate = datetime.date.today()
@@ -990,7 +987,7 @@ Use 'grabserial -h' for usage help."""
                     out_filepath = os.path.join(out_dirname, out_filename)
                     vprint("Opening new output file: '%s'" % out_filepath)
                     try:
-                        if make_dirs and not os.path.exists(out_dirname):
+                        if not os.path.exists(out_dirname):
                             os.makedirs(out_dirname)
                         out = open(out_filepath, out_permissions)
                         out_opendate = datetime.date.today()
