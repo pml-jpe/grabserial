@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # vim: set ts=4 sw=4 et :
+# pylint: disable=C0302
 #
 # grabserial - program to read a serial port and send the data to stdout
 #
@@ -224,7 +225,7 @@ except ImportError:
 
 import serial
 
-VERSION = (2, 1, 6)
+VERSION = (2, 1, 8)
 
 verbose = 0         # pylint: disable=I0011,C0103
 cmdinput = u""      # pylint: disable=I0011,C0103
@@ -234,8 +235,7 @@ def str_to_bool(value):
     """Convert string to python boolean type"""
     if value.lower() == "false" or value == "0":
         return False
-    else:
-        return True
+    return True
 
 
 def vprint(message):
@@ -260,8 +260,9 @@ def device_exists(device):
     """Check that the specified serial device exists."""
     if os.path.islink(device):
         device = os.path.realpath(device)
+
     try:
-        from serial.tools import list_ports
+        from serial.tools import list_ports   # pylint: disable=C0415
 
         for port in list_ports.comports():
             if port[0] == device:
@@ -284,6 +285,7 @@ def read_input():
             try:
                 # raw_input in python 2.x returns byte string
                 # decode to unicode
+                # pylint: disable=E0602
                 cmdinput = raw_input().decode(sys.stdin.encoding)
             except EOFError:
                 # if we're piping input, we want to stop trying to read
@@ -294,7 +296,7 @@ def read_input():
             # https://www.python.org/dev/peps/pep-3111/
             # input() returns string in unicode already
             try:
-                cmdinput = input()      # pylint: disable=I0011,W0141
+                cmdinput = input()      # pylint: disable=I0011
             except EOFError:
                 break
 
@@ -422,6 +424,7 @@ def grab(arglist, outputfd=sys.stdout):
     inlinetime = dict()
     endtime = 0
     out_filename = None
+    out_filepath = None
     out = None
     out_permissions = "wb"
     append = False
@@ -537,7 +540,8 @@ Use 'grabserial -h' for usage help."""
                 sd.close()
                 sys.exit(3)
         if opt in ["-o", "--output"]:
-            out_pattern = arg
+            out_dirname = os.path.dirname(arg)
+            out_pattern = os.path.basename(arg)
             if out_pattern == "%":
                 if os.name == "posix":
                     out_pattern = "%Y-%m-%d_%H:%M:%S"
@@ -546,6 +550,7 @@ Use 'grabserial -h' for usage help."""
             if "%d" in out_pattern or "%F" in out_pattern:
                 out_filenamehasdate = 1
             out_filename = datetime.datetime.now().strftime(out_pattern)
+            out_filepath = os.path.join(out_dirname, out_filename)
 
         if opt in ["-A", "--append"]:
             out_permissions = "a+b"
@@ -654,25 +659,25 @@ Use 'grabserial -h' for usage help."""
         vprint("Using pattern '%s' to restart program" % quitpat)
     if skip_device_check:
         vprint("Skipping check of serial device")
-    if out_filename:
+    if out_filepath:
         try:
             # open in binary mode, to pass through data as unmodified
             # as possible
-            if make_dirs and not os.path.exists(os.path.split(out_filename)[0]):
-                os.makedirs(os.path.split(out_filename)[0])
-            out = open(out_filename, out_permissions)
+            if make_dirs and not os.path.exists(out_dirname):
+                os.makedirs(out_dirname)
+            out = open(out_filepath, out_permissions)
             if out_filenamehasdate:
                 out_opendate = datetime.date.today()
         except IOError:
-            print("Can't open output file '%s'" % out_filename)
+            print("Can't open output file '%s'" % out_filepath)
             sys.exit(1)
         if append:
-            vprint("Appending data to '%s'" % out_filename)
+            vprint("Appending data to '%s'" % out_filepath)
         else:
-            vprint("Saving data to '%s'" % out_filename)
+            vprint("Saving data to '%s'" % out_filepath)
 
     if rotate_time:
-        if out_filename:
+        if out_filepath:
             vprint("Rotate output file every %s seconds" % rotate_interval)
         else:
             eprint("Error: Missing output filename")
@@ -724,7 +729,7 @@ Use 'grabserial -h' for usage help."""
     # use stdout encoding, or "utf8" for output
     out_encoding = sys.stdout.encoding
     if out_encoding is None:
-        out_encoding = "utf8"  # pylint: disable=I0011,redefined-variable-type
+        out_encoding = "utf8"  # pylint: disable=I0011
 
     stop_reason = "grabserial stopped for an unknown reason"
 
@@ -735,7 +740,8 @@ Use 'grabserial -h' for usage help."""
                 sd.write((cmdinput + u"\n").encode("utf8"))
                 cmdinput = u""
 
-            # read exactly 1 byte (for up to one second, based on timeout set above)
+            # read exactly 1 byte (for up to one second, based on
+            # timeout set above)
             # NOTE: x should be a byte string in both python 2 and 3
             x = sd.read(1)
 
@@ -749,17 +755,18 @@ Use 'grabserial -h' for usage help."""
                 vprint("Time for log rotation at %s" %
                        datetime.datetime.now().strftime("%H:%M:%S.%f"))
 
-                vprint("Closing output file: '%s'" % out_filename)
+                vprint("Closing output file: '%s'" % out_filepath)
                 out.close()
                 out_filename = datetime.datetime.now().strftime(out_pattern)
-                vprint("Opening new output file: '%s'" % out_filename)
+                out_filepath = os.path.join(out_dirname, out_filename)
+                vprint("Opening new output file: '%s'" % out_filepath)
                 try:
-                    if make_dirs and not os.path.exists(os.path.split(out_filename)[0]):
-                        os.makedirs(os.path.split(out_filename)[0])
-                    out = open(out_filename, out_permissions)
+                    if make_dirs and not os.path.exists(out_dirname):
+                        os.makedirs(out_dirname)
+                    out = open(out_filepath, out_permissions)
                     out_opendate = datetime.date.today()
                 except IOError:
-                    print("Can't open output file '%s'" % out_filename)
+                    print("Can't open output file '%s'" % out_filepath)
                     sys.exit(1)
 
                 # set up for next rotation
@@ -790,22 +797,23 @@ Use 'grabserial -h' for usage help."""
 
             # if outputting data to a file with a date in its name and the
             # date has changed, then close it and open a new file.
-            if (out_filename
+            if (out_filepath
                     and out_filenamehasdate
                     and newline
                     and datetime.date.today() > out_opendate
                     and not endtime):
-                vprint("Closing output file: '%s'" % out_filename)
+                vprint("Closing output file: '%s'" % out_filepath)
                 out.close()
                 out_filename = datetime.datetime.now().strftime(out_pattern)
-                vprint("Opening new output file: '%s'" % out_filename)
+                out_filepath = os.path.join(out_dirname, out_filename)
+                vprint("Opening new output file: '%s'" % out_filepath)
                 try:
-                    if make_dirs and not os.path.exists(os.path.split(out_filename)[0]):
-                        os.makedirs(os.path.split(out_filename)[0])
-                    out = open(out_filename, out_permissions)
+                    if make_dirs and not os.path.exists(out_dirname):
+                        os.makedirs(out_dirname)
+                    out = open(out_filepath, out_permissions)
                     out_opendate = datetime.date.today()
                 except IOError:
-                    print("Can't open output file '%s'" % out_filename)
+                    print("Can't open output file '%s'" % out_filepath)
                     sys.exit(1)
 
             if show_time and newline:
@@ -956,8 +964,8 @@ Use 'grabserial -h' for usage help."""
                     quitpat + "' was found"
                 break
 
-            if (x == b"\n" and not hex_output) \
-                    or (hex_output and outline_bytecount >= max_bytes_per_line):
+            if (x == b"\n" and not hex_output) or \
+                    (hex_output and outline_bytecount >= max_bytes_per_line):
                 newline = 1
                 if basepat and re.match(basepat, curline):
                     basetime = linetime
@@ -975,18 +983,19 @@ Use 'grabserial -h' for usage help."""
                     vprint("Time for log rotation at %s" %
                            datetime.datetime.now().strftime("%H:%M:%S.%f"))
 
-                    vprint("Closing output file: '%s'" % out_filename)
+                    vprint("Closing output file: '%s'" % out_filepath)
                     out.close()
                     out_filename = \
                         datetime.datetime.now().strftime(out_pattern)
-                    vprint("Opening new output file: '%s'" % out_filename)
+                    out_filepath = os.path.join(out_dirname, out_filename)
+                    vprint("Opening new output file: '%s'" % out_filepath)
                     try:
-                        if make_dirs and not os.path.exists(os.path.split(out_filename)[0]):
-                            os.makedirs(os.path.split(out_filename)[0])
-                        out = open(out_filename, out_permissions)
+                        if make_dirs and not os.path.exists(out_dirname):
+                            os.makedirs(out_dirname)
+                        out = open(out_filepath, out_permissions)
                         out_opendate = datetime.date.today()
                     except IOError:
-                        print("Can't open output file '%s'" % out_filename)
+                        print("Can't open output file '%s'" % out_filepath)
                         sys.exit(1)
 
                     # set up for next rotation
