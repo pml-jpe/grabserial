@@ -548,9 +548,9 @@ Use 'grabserial -h' for usage help."""
                     out_pattern = "%Y-%m-%d_%H-%M-%S"
             if "%d" in out_pattern or "%F" in out_pattern:
                 out_filenamehasdate = 1
-            # out_filename = datetime.datetime.now().strftime(out_pattern)
-            # out_dirname = datetime.datetime.now().strftime(out_dirname)
-            out_filepath = datetime.datetime.now().strftime(os.path.join(out_dirname, out_pattern))
+            # out_filename = out_pattern
+            # out_dirname = out_dirname
+            out_filepath = os.path.join(datetime.datetime.now().strftime(out_dirname), datetime.datetime.now().strftime(out_pattern))
 
         if opt in ["-A", "--append"]:
             out_permissions = "a+b"
@@ -757,7 +757,7 @@ Use 'grabserial -h' for usage help."""
                 out.close()
                 # out_filename = datetime.datetime.now().strftime(out_pattern)
                 # out_dirname = datetime.datetime.now().strftime(out_dirname)
-                out_filepath = datetime.datetime.now().strftime(os.path.join(out_dirname, out_pattern))
+                out_filepath = os.path.join(datetime.datetime.now().strftime(out_dirname), datetime.datetime.now().strftime(out_pattern))
                 vprint("Opening new output file: '%s'" % out_filepath)
                 try:
                     if not os.path.exists(out_dirname):
@@ -805,7 +805,8 @@ Use 'grabserial -h' for usage help."""
                 out.close()
                 # out_filename = datetime.datetime.now().strftime(out_pattern)
                 # out_dirname = datetime.datetime.now().strftime(out_dirname)
-                out_filepath = datetime.datetime.now().strftime(os.path.join(out_dirname, out_pattern))
+                out_filepath = os.path.join(datetime.datetime.now().strftime(out_dirname), datetime.datetime.now().strftime(out_pattern))
+                vprint("Opening new output file: '%s'" % out_filepath)
                 try:
                     if not os.path.exists(out_dirname):
                         os.makedirs(out_dirname)
@@ -984,9 +985,10 @@ Use 'grabserial -h' for usage help."""
 
                     vprint("Closing output file: '%s'" % out_filepath)
                     out.close()
-                    # out_filename = datetime.datetime.now().strftime(out_pattern)
+                    # out_filename = \
+                    #     datetime.datetime.now().strftime(out_pattern)
                     # out_dirname = datetime.datetime.now().strftime(out_dirname)
-                    out_filepath = datetime.datetime.now().strftime(os.path.join(out_dirname, out_pattern))
+                    out_filepath = os.path.join(datetime.datetime.now().strftime(out_dirname), datetime.datetime.now().strftime(out_pattern))
                     vprint("Opening new output file: '%s'" % out_filepath)
                     try:
                         if not os.path.exists(out_dirname):
