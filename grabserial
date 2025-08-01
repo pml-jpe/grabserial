@@ -24,8 +24,9 @@
 #  * restart based on received bytes?
 #
 # CHANGELOG:
-#  2025.07.14 - Version 2.2.1 - PML real-time streaming integration
+#  2025.07.14 - Version 2.2.1 - PML real-time streaming integration (FIXED)
 #   - add --rtstream and --instrument options for live data visualization
+#   - fixed variable scope issues in streaming code
 #  2025.07.12 - Version 2.2.0
 #   - add -E,--endofline option (contributed by mattmart3)
 #  2023.01.13 - Version 2.1.9
@@ -217,7 +218,7 @@ Options:
     --naked-timestamp      Print timestamp without surrounding square brackets.
     --rtstream=<host:port> Enable real-time streaming to specified host:port
                            (default port 5001 if only host specified)
-    --instrument=<name>    Set instrument name for real-time streaming
+    --instrument=<n>    Set instrument name for real-time streaming
 
 Ex: grabserial -e 30 -t -m "^Linux version.*"
 This will grab serial input for 30 seconds, displaying the time for
@@ -264,13 +265,11 @@ class RealTimeStreamer:
         
         try:
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            if not quiet:
-                vprint(f"Real-time streaming enabled to {host}:{port}")
-                if instrument_name:
-                    vprint(f"Instrument name: {instrument_name}")
+            print(f"Real-time streaming enabled to {host}:{port}")
+            if instrument_name:
+                print(f"Instrument name: {instrument_name}")
         except Exception as e:
-            if not quiet:
-                vprint(f"Warning: Could not initialize real-time streaming: {e}")
+            print(f"Warning: Could not initialize real-time streaming: {e}")
             self.enabled = False
     
     def send_data(self, raw_line, timestamp=None):
@@ -295,8 +294,7 @@ class RealTimeStreamer:
             )
         except Exception as e:
             # Don't let streaming errors interrupt serial logging
-            if verbose:
-                vprint(f"Streaming error: {e}")
+            print(f"Streaming error: {e}")
     
     def close(self):
         if self.sock:
@@ -695,10 +693,6 @@ Use 'grabserial -h' for usage help."""
             quiet = True
         if opt in ["-v", "--verbose"]:
             verbose = 1
-        if opt in ["-V", "--version"]:
-            print("grabserial version %d.%d.%d" % VERSION)
-            sd.close()
-            sys.exit(0)
         if opt in ["-S", "--skip"]:
             skip_device_check = 1
         if opt in ["-n", "--nodelta"]:
@@ -742,7 +736,7 @@ Use 'grabserial -h' for usage help."""
         eprint("")
         sys.exit(2)
 
-    # Initialize real-time streamer if requested
+    # Initialize real-time streamer if requested (AFTER options are parsed)
     streamer = None
     if rtstream_host:
         streamer = RealTimeStreamer(rtstream_host, rtstream_port, instrument_name)
@@ -1141,10 +1135,11 @@ Use 'grabserial -h' for usage help."""
                 if streamer and not hex_output:
                     try:
                         current_time = datetime.datetime.now()
-                        streamer.send_data(curline, current_time)
+                        # Send the raw curline data for now (simple and reliable)
+                        streamer.send_data(curline.strip(), current_time)
                     except Exception as e:
                         if verbose:
-                            vprint(f"Streaming error: {e}")
+                            print(f"Streaming error: {e}")
 
                 newline = 1
                 if basepat and re.match(basepat, curline):
