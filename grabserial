@@ -217,6 +217,7 @@ Options:
     --csv-friendly         Replace trailing space after timestamp with a comma (",")
                            to make timestamp more friendly to CSV data.
     --naked-timestamp      Print timestamp without surrounding square brackets.
+
     --rtstream=<host:port> Enable real-time streaming to specified host:port
                            (default port 5001 if only host specified)
     --instrument=<n>    Set instrument name for real-time streaming
