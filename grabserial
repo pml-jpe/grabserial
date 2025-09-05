@@ -649,7 +649,7 @@ Use 'grabserial -h' for usage help."""
                 sd.close()
                 sys.exit(3)
         if opt in ["-o", "--output"]:
-            out_dirname = os.path.dirname(arg)
+            out_dirname_pattern = os.path.dirname(arg)  # Store the pattern, don't evaluate yet
             out_pattern = os.path.basename(arg)
             if out_pattern == "%":
                 if os.name == "posix":
@@ -659,7 +659,7 @@ Use 'grabserial -h' for usage help."""
             if "%d" in out_pattern or "%F" in out_pattern:
                 out_filenamehasdate = 1
             out_filename = datetime.datetime.now().strftime(out_pattern)
-            out_dirname = datetime.datetime.now().strftime(out_dirname)
+            out_dirname = datetime.datetime.now().strftime(out_dirname_pattern)  # Now evaluate the directory pattern
             mkdir_p(out_dirname)
             out_filepath = os.path.join(out_dirname, out_filename)
 
@@ -891,7 +891,7 @@ Use 'grabserial -h' for usage help."""
                 vprint("Closing output file: '%s'" % out_filepath)
                 out.close()
                 out_filename = datetime.datetime.now().strftime(out_pattern)
-                out_dirname = datetime.datetime.now().strftime(out_dirname)
+                out_dirname = datetime.datetime.now().strftime(out_dirname_pattern)
                 mkdir_p(out_dirname)
                 out_filepath = os.path.join(out_dirname, out_filename)
                 vprint("Opening new output file: '%s'" % out_filepath)
@@ -938,7 +938,7 @@ Use 'grabserial -h' for usage help."""
                 vprint("Closing output file: '%s'" % out_filepath)
                 out.close()
                 out_filename = datetime.datetime.now().strftime(out_pattern)
-                out_dirname = datetime.datetime.now().strftime(out_dirname)
+                out_dirname = datetime.datetime.now().strftime(out_dirname_pattern)
                 mkdir_p(out_dirname)
                 out_filepath = os.path.join(out_dirname, out_filename)
                 vprint("Opening new output file: '%s'" % out_filepath)
@@ -1169,7 +1169,7 @@ Use 'grabserial -h' for usage help."""
                     out.close()
                     out_filename = \
                         datetime.datetime.now().strftime(out_pattern)
-                    out_dirname = datetime.datetime.now().strftime(out_dirname)
+                    out_dirname = datetime.datetime.now().strftime(out_dirname_pattern)
                     mkdir_p(out_dirname)
                     out_filepath = os.path.join(out_dirname, out_filename)
                     vprint("Opening new output file: '%s'" % out_filepath)
