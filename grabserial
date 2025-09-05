@@ -24,6 +24,9 @@
 #  * restart based on received bytes?
 #
 # CHANGELOG:
+#  2025.07.14 - Version 2.2.1 - PML real-time streaming integration (FIXED)
+#   - add --rtstream and --instrument options for live data visualization
+#   - fixed variable scope issues in streaming code
 #  2025.07.12 - Version 2.2.0
 #   - add -E,--endofline option (contributed by mattmart3)
 #  2023.01.13 - Version 2.1.9
@@ -175,7 +178,7 @@ Options:
     -q, --quitpat=<pat>    Specify a regular expression pattern to end the
                            program.  It works mid-line.
     -l, --launchtime       Set base time from launch of program.
-    -o, --output=<name>    Output data to the named file.  If name is
+    -o, --output=<n>    Output data to the named file.  If name is
                            "%" it is replaced with %Y-%m_%dT%H-%M-%S.
                            (or with %Y-%m-%d_%H:%M:%S for Linux), otherwise
                            standard strftime() format strings can be used.
@@ -215,10 +218,18 @@ Options:
                            to make timestamp more friendly to CSV data.
     --naked-timestamp      Print timestamp without surrounding square brackets.
 
+    --rtstream=<host:port> Enable real-time streaming to specified host:port
+                           (default port 5001 if only host specified)
+    --instrument=<n>    Set instrument name for real-time streaming
+
 Ex: grabserial -e 30 -t -m "^Linux version.*"
 This will grab serial input for 30 seconds, displaying the time for
 each line, and re-setting the base time when the line starting with
 "Linux version" is seen.
+
+Real-time streaming example:
+grabserial -d COM3 -b 9600 -o data.txt --rtstream=localhost:5001 --instrument=LGR
+This will capture data to file AND stream it live to a visualization service.
 """
 
 
@@ -229,6 +240,8 @@ import time
 import datetime
 import re
 import errno
+import socket
+import json
 
 try:
     import thread
@@ -237,10 +250,57 @@ except ImportError:
 
 import serial
 
-VERSION = (2, 2, 0)
+VERSION = (2, 2, 1)
 
 verbose = 0         # pylint: disable=I0011,C0103
 cmdinput = u""      # pylint: disable=I0011,C0103
+
+
+# Real-time streaming support
+class RealTimeStreamer:
+    def __init__(self, host='localhost', port=5001, instrument_name=None):
+        self.host = host
+        self.port = port
+        self.instrument_name = instrument_name
+        self.sock = None
+        self.enabled = True
+        
+        try:
+            self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            print(f"Real-time streaming enabled to {host}:{port}")
+            if instrument_name:
+                print(f"Instrument name: {instrument_name}")
+        except Exception as e:
+            print(f"Warning: Could not initialize real-time streaming: {e}")
+            self.enabled = False
+    
+    def send_data(self, raw_line, timestamp=None):
+        """Send raw line data to real-time service"""
+        if not self.enabled or not self.sock:
+            return
+            
+        try:
+            if timestamp is None:
+                timestamp = datetime.datetime.now()
+            
+            message = {
+                'instrument': self.instrument_name or 'unknown',
+                'timestamp': timestamp.isoformat(),
+                'raw_data': raw_line.strip(),
+                'source': 'grabserial'
+            }
+            
+            self.sock.sendto(
+                json.dumps(message).encode('utf-8'), 
+                (self.host, self.port)
+            )
+        except Exception as e:
+            # Don't let streaming errors interrupt serial logging
+            print(f"Streaming error: {e}")
+    
+    def close(self):
+        if self.sock:
+            self.sock.close()
 
 
 def str_to_bool(value):
@@ -432,6 +492,8 @@ def grab(arglist, outputfd=sys.stdout):
                 "etx-newline",
                 "csv-friendly",
                 "naked-timestamp",
+                "rtstream=",
+                "instrument=",
             ])
     except getopt.GetoptError as err:
         # print help info and exit
@@ -488,6 +550,11 @@ def grab(arglist, outputfd=sys.stdout):
     etx_newline = False
     csv_friendly = False
     naked_timestamp = False
+    
+    # Real-time streaming options
+    rtstream_host = None
+    rtstream_port = None
+    instrument_name = None
 
     for opt, arg in opts:
         if opt in ["-h", "--help"]:
@@ -630,10 +697,6 @@ Use 'grabserial -h' for usage help."""
             quiet = True
         if opt in ["-v", "--verbose"]:
             verbose = 1
-        if opt in ["-V", "--version"]:
-            print("grabserial version %d.%d.%d" % VERSION)
-            sd.close()
-            sys.exit(0)
         if opt in ["-S", "--skip"]:
             skip_device_check = 1
         if opt in ["-n", "--nodelta"]:
@@ -662,12 +725,27 @@ Use 'grabserial -h' for usage help."""
             csv_friendly = True
         if opt in ["--naked-timestamp"]:
             naked_timestamp = True
+        if opt in ["--rtstream"]:
+            # Parse host:port
+            if ':' in arg:
+                rtstream_host, port_str = arg.split(':', 1)
+                rtstream_port = int(port_str)
+            else:
+                rtstream_host = arg
+                rtstream_port = 5001  # Default port
+        if opt in ["--instrument"]:
+            instrument_name = arg
 
     if args:
         eprint("Error: unrecognized argument '%s'" % args[0])
         eprint("Use 'grabserial -h' to get usage help")
         eprint("")
         sys.exit(2)
+
+    # Initialize real-time streamer if requested (AFTER options are parsed)
+    streamer = None
+    if rtstream_host:
+        streamer = RealTimeStreamer(rtstream_host, rtstream_port, instrument_name)
 
     if command_mode:
         if not command:
@@ -879,7 +957,7 @@ Use 'grabserial -h' for usage help."""
                     delta = elapsed-prev1
                     msg = "[%s %4.6f %2.6f] " % (linetimestr, elapsed, delta)
                 else:
-                    msg = "[%s %4.6f] " % elapsed
+                    msg = "[%s %4.6f] " % (linetimestr, elapsed)
                 if line_label:
                     msg = line_label + ' ' + msg
                 if not quiet:
@@ -1058,7 +1136,17 @@ Use 'grabserial -h' for usage help."""
                     ((hex_output) and outline_bytecount >= max_bytes_per_line):
                 if hex_ascii:
                     if not quiet: outputfd.write('> ' + '\33[96m' + curline + '\33[m')
-                    if out: out.write('> ' +curline)
+                    if out: out.write(('> ' + curline).encode(out_encoding))
+
+                # Send to real-time stream if enabled and we have a complete line
+                if streamer and not hex_output:
+                    try:
+                        current_time = datetime.datetime.now()
+                        # Send the raw curline data for now (simple and reliable)
+                        streamer.send_data(curline.strip(), current_time)
+                    except Exception as e:
+                        if verbose:
+                            print(f"Streaming error: {e}")
 
                 newline = 1
                 if basepat and re.match(basepat, curline):
@@ -1147,6 +1235,10 @@ Use 'grabserial -h' for usage help."""
 
     if out:
         out.close()
+    
+    # Clean up streamer
+    if streamer:
+        streamer.close()
 
     vprint(stop_reason)
 
