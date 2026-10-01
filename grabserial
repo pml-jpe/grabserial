@@ -219,7 +219,9 @@ Options:
     --naked-timestamp      Print timestamp without surrounding square brackets.
 
     --rtstream=<host:port> Enable real-time streaming to specified host:port
-                           (default port 5001 if only host specified)
+                           (default port 5001 if only host specified).
+                           May be given more than once, or as a comma-separated
+                           list, to stream to multiple destinations.
     --instrument=<n>    Set instrument name for real-time streaming
 
 Ex: grabserial -e 30 -t -m "^Linux version.*"
@@ -230,6 +232,9 @@ each line, and re-setting the base time when the line starting with
 Real-time streaming example:
 grabserial -d COM3 -b 9600 -o data.txt --rtstream=localhost:5001 --instrument=LGR
 This will capture data to file AND stream it live to a visualization service.
+
+grabserial -d COM3 -o data.txt --rtstream=localhost:5001 --rtstream=10.0.0.5:5002
+This will stream the same data to two destinations.
 """
 
 
@@ -242,6 +247,11 @@ import re
 import errno
 import socket
 import json
+import threading
+try:
+    import queue
+except ImportError:
+    import Queue as queue
 
 try:
     import thread
@@ -257,50 +267,195 @@ cmdinput = u""      # pylint: disable=I0011,C0103
 
 
 # Real-time streaming support
-class RealTimeStreamer:
-    def __init__(self, host='localhost', port=5001, instrument_name=None):
+class _StreamDestination(threading.Thread):
+    """Sends queued messages to a single UDP host:port in a background thread.
+
+    Each destination is fully isolated: DNS lookups, socket errors or a dead
+    receiver on one destination never block or affect the others, nor the
+    serial capture loop (which only does a non-blocking queue put).
+    """
+    QUEUE_SIZE = 1000
+    RETRY_SECS = 30             # how often to retry a failed destination
+    ERROR_REPORT_SECS = 60      # minimum interval between error reports
+
+    def __init__(self, host, port):
+        threading.Thread.__init__(self, name="rtstream-%s:%s" % (host, port))
+        self.daemon = True
         self.host = host
         self.port = port
-        self.instrument_name = instrument_name
+        self.queue = queue.Queue(maxsize=self.QUEUE_SIZE)
         self.sock = None
-        self.enabled = True
-        
+        self.addr = None
+        self.next_retry = 0
+        self.failing = False
+        self.reported_failure = False
+        self.last_report = 0
+        self.errors_since_report = 0
+        self.sent = 0
+        self.dropped = 0
+        self.failed = 0
+
+    def label(self):
+        return "%s:%s" % (self.host, self.port)
+
+    def put(self, payload):
+        """Queue a payload for sending; never blocks."""
         try:
-            self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            print(f"Real-time streaming enabled to {host}:{port}")
-            if instrument_name:
-                print(f"Instrument name: {instrument_name}")
+            self.queue.put_nowait(payload)
+        except queue.Full:
+            self.dropped += 1
+
+    def _report_error(self, err):
+        self.failing = True
+        self.errors_since_report += 1
+        now = time.time()
+        if now - self.last_report >= self.ERROR_REPORT_SECS:
+            extra = ""
+            if self.errors_since_report > 1:
+                extra = " (%d errors since last report)" % self.errors_since_report
+            eprint("Warning: rtstream destination %s not working: %s%s" %
+                   (self.label(), err, extra))
+            self.last_report = now
+            self.errors_since_report = 0
+            self.reported_failure = True
+
+    def _report_ok(self):
+        if self.failing and self.reported_failure:
+            eprint("rtstream destination %s is working again" % self.label())
+        self.failing = False
+        self.reported_failure = False
+        self.errors_since_report = 0
+
+    def _ensure_socket(self):
+        """Resolve the destination and create its socket; returns True if ready."""
+        if self.sock and self.addr:
+            return True
+        if time.time() < self.next_retry:
+            return False
+        try:
+            # Prefer IPv4 (so 'localhost' reaches IPv4 listeners), but
+            # fall back to any address family
+            try:
+                info = socket.getaddrinfo(self.host, self.port,
+                                          socket.AF_INET, socket.SOCK_DGRAM)
+            except socket.gaierror:
+                info = socket.getaddrinfo(self.host, self.port,
+                                          0, socket.SOCK_DGRAM)
+            family, socktype, proto, _, addr = info[0]
+            sock = socket.socket(family, socktype, proto)
+            # On Windows, an ICMP 'port unreachable' from a previous send
+            # can surface as an error on later socket calls; disable that.
+            if hasattr(socket, "SIO_UDP_CONNRESET"):
+                try:
+                    sock.ioctl(socket.SIO_UDP_CONNRESET, False)
+                except Exception:
+                    pass
+            self.sock = sock
+            self.addr = addr
+            return True
         except Exception as e:
-            print(f"Warning: Could not initialize real-time streaming: {e}")
-            self.enabled = False
-    
+            self.next_retry = time.time() + self.RETRY_SECS
+            self._report_error(e)
+            return False
+
+    def _reset_socket(self):
+        if self.sock:
+            try:
+                self.sock.close()
+            except Exception:
+                pass
+        self.sock = None
+        self.addr = None
+
+    def run(self):
+        while True:
+            try:
+                payload = self.queue.get(timeout=self.RETRY_SECS)
+            except queue.Empty:
+                # No data for a while: still retry a failed destination in
+                # the background so it is ready when data arrives
+                self._ensure_socket()
+                continue
+            if payload is None:
+                break
+            if not self._ensure_socket():
+                # Destination is down and waiting for its next retry;
+                # discard this message rather than queueing it up
+                self.failed += 1
+                continue
+            try:
+                self.sock.sendto(payload, self.addr)
+                self.sent += 1
+                self._report_ok()
+            except Exception as e:
+                self.failed += 1
+                self._report_error(e)
+                # Drop the socket and back off; it will be re-resolved and
+                # recreated at the next retry, in case the address changed
+                self._reset_socket()
+                self.next_retry = time.time() + self.RETRY_SECS
+        self._reset_socket()
+
+    def stop(self, timeout=1.0):
+        try:
+            self.queue.put(None, timeout=timeout)
+        except queue.Full:
+            pass
+        self.join(timeout)
+
+
+class RealTimeStreamer:
+    def __init__(self, destinations, instrument_name=None):
+        # destinations is a list of (host, port) tuples
+        self.instrument_name = instrument_name
+        self.destinations = []
+
+        for host, port in destinations:
+            try:
+                dest = _StreamDestination(host, port)
+                dest.start()
+                self.destinations.append(dest)
+                eprint("Real-time streaming enabled to %s" % dest.label())
+            except Exception as e:
+                eprint("Warning: could not set up rtstream destination %s:%s: %s" %
+                       (host, port, e))
+        if instrument_name and self.destinations:
+            eprint("Instrument name: %s" % instrument_name)
+
     def send_data(self, raw_line, timestamp=None):
-        """Send raw line data to real-time service"""
-        if not self.enabled or not self.sock:
+        """Queue raw line data for all real-time destinations (never blocks)"""
+        if not self.destinations:
             return
-            
+
         try:
             if timestamp is None:
                 timestamp = datetime.datetime.now()
-            
+
             message = {
                 'instrument': self.instrument_name or 'unknown',
                 'timestamp': timestamp.isoformat(),
                 'raw_data': raw_line.strip(),
                 'source': 'grabserial'
             }
-            
-            self.sock.sendto(
-                json.dumps(message).encode('utf-8'), 
-                (self.host, self.port)
-            )
+            payload = json.dumps(message).encode('utf-8')
         except Exception as e:
             # Don't let streaming errors interrupt serial logging
-            print(f"Streaming error: {e}")
-    
+            eprint("Streaming error: %s" % e)
+            return
+
+        for dest in self.destinations:
+            dest.put(payload)
+
     def close(self):
-        if self.sock:
-            self.sock.close()
+        for dest in self.destinations:
+            try:
+                dest.stop()
+            except Exception:
+                pass
+            if dest.failed or dest.dropped:
+                eprint("rtstream %s: %d sent, %d failed, %d dropped (queue full)" %
+                       (dest.label(), dest.sent, dest.failed, dest.dropped))
+        self.destinations = []
 
 
 def str_to_bool(value):
@@ -552,8 +707,7 @@ def grab(arglist, outputfd=sys.stdout):
     naked_timestamp = False
     
     # Real-time streaming options
-    rtstream_host = None
-    rtstream_port = None
+    rtstream_destinations = []
     instrument_name = None
 
     for opt, arg in opts:
@@ -726,13 +880,25 @@ Use 'grabserial -h' for usage help."""
         if opt in ["--naked-timestamp"]:
             naked_timestamp = True
         if opt in ["--rtstream"]:
-            # Parse host:port
-            if ':' in arg:
-                rtstream_host, port_str = arg.split(':', 1)
-                rtstream_port = int(port_str)
-            else:
-                rtstream_host = arg
-                rtstream_port = 5001  # Default port
+            # Parse host:port, possibly a comma-separated list
+            for dest in arg.split(','):
+                dest = dest.strip()
+                if not dest:
+                    continue
+                if ':' in dest:
+                    host, port_str = dest.rsplit(':', 1)
+                    try:
+                        port = int(port_str)
+                        if not 0 < port < 65536:
+                            raise ValueError
+                    except ValueError:
+                        eprint("Warning: ignoring --rtstream '%s': invalid port" % dest)
+                        continue
+                else:
+                    host = dest
+                    port = 5001  # Default port
+                if (host, port) not in rtstream_destinations:
+                    rtstream_destinations.append((host, port))
         if opt in ["--instrument"]:
             instrument_name = arg
 
@@ -744,8 +910,8 @@ Use 'grabserial -h' for usage help."""
 
     # Initialize real-time streamer if requested (AFTER options are parsed)
     streamer = None
-    if rtstream_host:
-        streamer = RealTimeStreamer(rtstream_host, rtstream_port, instrument_name)
+    if rtstream_destinations:
+        streamer = RealTimeStreamer(rtstream_destinations, instrument_name)
 
     if command_mode:
         if not command:
