@@ -1115,6 +1115,30 @@ Use 'grabserial -h' for usage help."""
                     print("Can't open output file '%s'" % out_filepath)
                     sys.exit(1)
 
+            # if the rotation time has passed by the time the first char of
+            # a new line arrives, rotate now so the line goes in the new file
+            # (otherwise it would only be rotated after the line completes)
+            if out and newline and rotate_time and time.time() > rotate_time:
+                vprint("Time for log rotation at %s" %
+                       datetime.datetime.now().strftime("%H:%M:%S.%f"))
+
+                vprint("Closing output file: '%s'" % out_filepath)
+                out.close()
+                out_filename = datetime.datetime.now().strftime(out_pattern)
+                out_dirname = datetime.datetime.now().strftime(out_dirname_pattern)
+                mkdir_p(out_dirname)
+                out_filepath = os.path.join(out_dirname, out_filename)
+                vprint("Opening new output file: '%s'" % out_filepath)
+                try:
+                    out = open(out_filepath, out_permissions)
+                    out_opendate = datetime.date.today()
+                except IOError:
+                    print("Can't open output file '%s'" % out_filepath)
+                    sys.exit(1)
+
+                # set up for next rotation
+                rotate_time += rotate_interval
+
             if show_time and show_systime and newline:
                 linetime = time.time()
                 linetimestr = datetime.datetime.now().strftime(systime_format)
